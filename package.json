@@ -1,0 +1,13 @@
+{
+  "name": "boardforge",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Browser-first PCB editor core: board model, KiCad round trip, DRC, enclosure generation. No runtime dependencies, no network.",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {},
+  "license": "MIT"
+}
