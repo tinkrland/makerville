@@ -25,3 +25,5 @@ must accompany copies of the ported files; see `licenses/MIT-tscircuit.txt`.
 `src/drc/*` (shape distance library and design rule check) is original to
 boardforge. Rule names follow KiCad's so results can be compared; the checker
 was validated against KiCad 9.0.8's own DRC but contains none of its code.
+
+`src/engine/*` (patches, undo, command engine) is original to boardforge.
