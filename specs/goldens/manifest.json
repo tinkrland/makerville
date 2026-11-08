@@ -1,0 +1,51 @@
+{
+  "usb-header": {
+    "name": "usb-header",
+    "scadSha": "61e3f63c52ef1479",
+    "stlSha": "9534e2f896d276f7",
+    "openscad": "OpenSCAD version 2021.01",
+    "blessedAt": "2026-11-08"
+  },
+  "four-walls": {
+    "name": "four-walls",
+    "scadSha": "df257bc2203481af",
+    "stlSha": "5c2cb84464bb009a",
+    "openscad": "OpenSCAD version 2021.01",
+    "blessedAt": "2026-11-08"
+  },
+  "bottom-parts": {
+    "name": "bottom-parts",
+    "scadSha": "59262563a05ba012",
+    "stlSha": "fc0ddb5d222ace8c",
+    "openscad": "OpenSCAD version 2021.01",
+    "blessedAt": "2026-11-08"
+  },
+  "rounded": {
+    "name": "rounded",
+    "scadSha": "48244d71497020d9",
+    "stlSha": "7934dd9e0ee94829",
+    "openscad": "OpenSCAD version 2021.01",
+    "blessedAt": "2026-11-08"
+  },
+  "l-shape": {
+    "name": "l-shape",
+    "scadSha": "3606875a61e871f9",
+    "stlSha": "13ff389d9ea15403",
+    "openscad": "OpenSCAD version 2021.01",
+    "blessedAt": "2026-11-08"
+  },
+  "usb-header-ideal": {
+    "name": "usb-header-ideal",
+    "scadSha": "5f5616e18b49bfeb",
+    "stlSha": "7aaa1032bd4467a3",
+    "openscad": "OpenSCAD version 2021.01",
+    "blessedAt": "2026-11-08"
+  },
+  "usb-header-resin-m3": {
+    "name": "usb-header-resin-m3",
+    "scadSha": "99e09bd67a1d1aec",
+    "stlSha": "112cb319d4e4bdac",
+    "openscad": "OpenSCAD version 2021.01",
+    "blessedAt": "2026-11-08"
+  }
+}

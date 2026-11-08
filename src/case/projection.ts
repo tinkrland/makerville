@@ -100,6 +100,8 @@ export interface ResolvedOpening {
   /** size of the cut */
   width: number
   height: number
+  /** edge openings: world coordinate (x for x walls, y for y walls) of the part's outermost body edge toward the wall */
+  bodyEdge?: number
   /** bottom of the cut above the board surface (edge) */
   z: number
   /** top openings: centre in board coordinates */
@@ -117,7 +119,7 @@ export function resolveOpenings(board: Board, extra?: Record<string, Projection>
         const wall = wallFor(o.faces, fp.rotation, fp.side)
         // where the part's pads centre sits is a better anchor than the origin for connectors whose origin is off-centre
         const c = centroid(fp)
-        out.push({ ref: fp.ref, label: o.label, kind: "edge", side: fp.side, wall, along: wall === "y+" || wall === "y-" ? c.x : c.y, width: o.width, height: o.height, z: o.z })
+        out.push({ ref: fp.ref, label: o.label, kind: "edge", side: fp.side, wall, along: wall === "y+" || wall === "y-" ? c.x : c.y, bodyEdge: bodyEdgeToward(fp, wall), width: o.width, height: o.height, z: o.z })
       } else {
         out.push({ ref: fp.ref, label: o.label, kind: "top", side: fp.side, at: centroid(fp), width: o.width, height: o.height, z: 0, round: o.round })
       }
@@ -131,4 +133,24 @@ function centroid(fp: Footprint): Pt {
   let x = 0, y = 0
   for (const p of fp.pads) { const w = padWorld(fp, p); x += w.x; y += w.y }
   return { x: x / fp.pads.length, y: y / fp.pads.length }
+}
+
+/** the outermost extent of the part's body toward a wall, in world coordinates. Uses pads and the body box. */
+function bodyEdgeToward(fp: Footprint, wall: Wall): number {
+  const r = (fp.rotation * Math.PI) / 180
+  const c = Math.cos(r), s = Math.sin(r)
+  const hw = fp.body.w / 2, hh = fp.body.h / 2
+  const mir = fp.side === "bottom" ? -1 : 1
+  const pts: Pt[] = []
+  for (const [x, y] of [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as const) {
+    const lx = x * mir
+    pts.push({ x: fp.at.x + lx * c - y * s, y: fp.at.y + lx * s + y * c })
+  }
+  for (const p of fp.pads) {
+    const w = padWorld(fp, p)
+    const hx = Math.max(p.size.w, p.size.h) / 2
+    pts.push({ x: w.x - hx, y: w.y - hx }, { x: w.x + hx, y: w.y + hx })
+  }
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y)
+  return wall === "x+" ? Math.max(...xs) : wall === "x-" ? Math.min(...xs) : wall === "y+" ? Math.max(...ys) : Math.min(...ys)
 }

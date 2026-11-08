@@ -27,3 +27,8 @@ boardforge. Rule names follow KiCad's so results can be compared; the checker
 was validated against KiCad 9.0.8's own DRC but contains none of its code.
 
 `src/engine/*` (patches, undo, command engine) is original to boardforge.
+
+`src/case/*` (projections, tolerance profiles, OpenSCAD generator) and `specs/*` (golden-master suite)
+are original to boardforge. The approach of deriving a case from per-part records, treating design
+flaws as hard errors, and pinning output with golden files plus a canonical STL hash follows kqrla/keeberia's
+paracraft engine, which was read for method only. No code was copied from it.
