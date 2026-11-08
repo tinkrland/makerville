@@ -29,7 +29,7 @@ does the next unchecked step, runs the tests, commits, and updates this file. Ke
 Real models are B-rep. Face mix in the five reference files: planes ~70%, then cylinders, cones, circles/lines for edges, a few B-spline surfaces. Units mm. Assemblies are rare but real.
 
 - [x] 1. `part21.ts` Part 21 text parser. 46 tests, exact error offsets, real files verified.
-- [ ] 2. `units.ts` read length unit (SI mm/m, CONVERSION_BASED inch) and return a scale to millimetres.
+- [x] 2. `units.ts` length unit per shape via its representation context (SI prefixes, CONVERSION_BASED inch/foot/mil, mixed-unit files). 21 tests, mutation-checked. Use `shapeRepresentations(p)` + `unitForContext(...)` to scale each shape; never match shapes by name suffix (CONTEXT_DEPENDENT_SHAPE_REPRESENTATION is an assembly link).
 - [ ] 3. `geometry.ts` resolve points, directions, axis placements, lines, circles, ellipses, B-spline curves into evaluators.
 - [ ] 4. `surfaces.ts` plane, cylinder, cone, sphere, torus, B-spline surface: evaluate point + normal and project a point to (u,v).
 - [ ] 5. `brep.ts` walk MANIFOLD_SOLID_BREP -> CLOSED_SHELL -> ADVANCED_FACE -> loops -> oriented edges. Respect same_sense flags and edge orientation.
@@ -51,4 +51,5 @@ Acceptance for the whole STEP feature: all five reference files tessellate with 
 5. EasyEDA adapter, KiCad IPC plugin, web shell (all thin).
 
 ## Log (newest first; add a line per working session)
+- 2026-11-08: STEP step 2 done (units). Bug found by a real file: name-suffix matching mistook an assembly link for a shape; now structural. Scheduled workflow 'Boardforge continue' created (every 30 min, 12 runs).
 - 2026-11-08: STEP step 1 done (Part 21 parser). Found and fixed an off-by-whitespace error offset bug; removed one redundant stripper branch proven equivalent by mutation.
