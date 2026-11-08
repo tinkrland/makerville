@@ -19,3 +19,9 @@ Reference reading (design, file formats and pitfalls; no code copied unless list
 
 Copyright (c) 2026 tscircuit, used under the MIT licence. The MIT licence text
 must accompany copies of the ported files; see `licenses/MIT-tscircuit.txt`.
+
+## Original work
+
+`src/drc/*` (shape distance library and design rule check) is original to
+boardforge. Rule names follow KiCad's so results can be compared; the checker
+was validated against KiCad 9.0.8's own DRC but contains none of its code.

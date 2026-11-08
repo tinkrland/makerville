@@ -213,3 +213,23 @@ export function padKicadXY(fp: Footprint, pad: Pad): Pt {
   const w = padWorld(fp, pad)
   return { x: PAGE_CENTER.x + w.x, y: PAGE_CENTER.y - w.y }
 }
+
+/**
+ * The board's rules as a KiCad custom-rules file (.kicad_dru), so KiCad's DRC
+ * and ours enforce the same numbers. Save it next to the board with the same
+ * base name, e.g. board.kicad_pcb + board.kicad_dru.
+ */
+export function writeKicadDru(b: Board): string {
+  const r = b.rules
+  const rule = (name: string, constraint: string) => `(rule "${name}"\n  (constraint ${constraint}))\n`
+  return (
+    `(version 1)\n` +
+    rule("boardforge min track width", `track_width (min ${r.minTrackWidth}mm)`) +
+    rule("boardforge clearance", `clearance (min ${r.clearance}mm)`) +
+    rule("boardforge min via diameter", `via_diameter (min ${r.minViaDiameter}mm)`) +
+    rule("boardforge min hole size", `hole_size (min ${r.minViaDrill}mm)`) +
+    rule("boardforge annular ring", `annular_width (min ${r.minAnnularRing}mm)`) +
+    rule("boardforge edge clearance", `edge_clearance (min ${r.edgeClearance}mm)`) +
+    rule("boardforge hole to hole", `hole_to_hole (min ${r.minHoleToHole}mm)`)
+  )
+}
