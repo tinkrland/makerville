@@ -30,10 +30,10 @@ Real models are B-rep. Face mix in the five reference files: planes ~70%, then c
 
 - [x] 1. `part21.ts` Part 21 text parser. 46 tests, exact error offsets, real files verified.
 - [x] 2. `units.ts` length unit per shape via its representation context (SI prefixes, CONVERSION_BASED inch/foot/mil, mixed-unit files). 21 tests, mutation-checked. Use `shapeRepresentations(p)` + `unitForContext(...)` to scale each shape; never match shapes by name suffix (CONTEXT_DEPENDENT_SHAPE_REPRESENTATION is an assembly link).
-- [ ] 3. `geometry.ts` resolve points, directions, axis placements, lines, circles, ellipses, B-spline curves into evaluators.
-- [ ] 4. `surfaces.ts` plane, cylinder, cone, sphere, torus, B-spline surface: evaluate point + normal and project a point to (u,v).
-- [ ] 5. `brep.ts` walk MANIFOLD_SOLID_BREP -> CLOSED_SHELL -> ADVANCED_FACE -> loops -> oriented edges. Respect same_sense flags and edge orientation.
-- [ ] 6. `tessellate.ts` turn each trimmed face into triangles: sample the boundary loops to a chord tolerance, triangulate in the surface's (u,v) domain handling holes (ear clipping with hole bridging), lift back to 3D. Planes exact; cylinders/cones need seam handling.
+- [x] 3. `geometry.ts` resolve points, directions, axis placements, lines, circles, ellipses, B-spline curves into evaluators. Done (commit 27b60ff).
+- [x] 4. `surfaces.ts` plane, cylinder, cone, sphere, torus, B-spline surface: evaluate point + normal and project a point to (u,v). Done (commit 27b60ff).
+- [x] 5. `brep.ts` walk MANIFOLD_SOLID_BREP -> CLOSED_SHELL -> ADVANCED_FACE -> loops -> oriented edges. Respect same_sense flags and edge orientation. Done (commit 3b695ee).
+- [x] 6. `tessellate.ts` turn each trimmed face into triangles: sample the boundary loops to a chord tolerance, triangulate in the surface's (u,v) domain handling holes (ear clipping with hole bridging), lift back to 3D. Planes exact; cylinders/cones need seam handling. Done, BUT see "Measured state" below: not every real model closes.
 - [ ] 7. `assembly.ts` NEXT_ASSEMBLY_USAGE_OCCURRENCE + ITEM_DEFINED_TRANSFORMATION placements; instance shared parts.
 - [ ] 8. `colour.ts` STYLED_ITEM -> COLOUR_RGB per face.
 - [ ] 9. `index.ts` `readStep(bytes) -> { meshes: [{ positions, indices, colour }], boundsMm, warnings }`.
@@ -43,6 +43,20 @@ Real models are B-rep. Face mix in the five reference files: planes ~70%, then c
 
 Acceptance for the whole STEP feature: all five reference files tessellate with 0 errors, bounding boxes match the STEP's own declared extents, closed solids are watertight (each edge shared by exactly two triangles), and total volume is within 2% of an independent computation. Unsupported surface types produce a named warning and are skipped, never a crash or a silent hole.
 
+## Measured state of the tessellator (2026-11-09, run `weld` then `stitchTJunctions` before `meshStats`)
+Faces are tessellated separately, so a raw mesh is never watertight; always weld first. After weld + stitch:
+
+| Model | Watertight | Open edges | Non-manifold | Volume |
+|---|---|---|---|---|
+| solidworks.step (2x4x6 box) | yes | 0 | 0 | 48.00 (exact) |
+| R_0603 resistor | yes | 0 | 0 | 0.54 |
+| TO-92 transistor | yes | 0 | 0 | 75.66 |
+| Contact.step | no | 0 | 1 | 4.01 |
+| TYPE-C-31-M-12 connector (42 solids) | no | 316 | 9 | 113.97 |
+| plcc44 socket | no | 112 | 0 | 1055.28 |
+
+Sizes and volumes look right on all six; closure does not. The acceptance bar (every closed solid watertight) is NOT met. Only the resistor is asserted watertight in the tests; the others are only asserted to improve. Next: find why the connector and the socket leave open edges (suspects: edges shared between faces on different surfaces sampled at different counts, so their vertices do not coincide; curved-face seams; B-spline faces) and fix the cause, not the tolerance. Do not raise the stitch tolerance to hide it.
+
 ## Then, in order
 1. Schematic files: write/read `.kicad_sch` v9 from the same board model (netlist is already there).
 2. Footprint sourcing: import `.kicad_mod` and `.pretty` libraries into the library module; keep it offline.
@@ -51,5 +65,6 @@ Acceptance for the whole STEP feature: all five reference files tessellate with 
 5. EasyEDA adapter, KiCad IPC plugin, web shell (all thin).
 
 ## Log (newest first; add a line per working session)
+- 2026-11-09: Steps 3 to 6 are committed (earlier scheduled runs). Re-measured all six real models: three close, three do not (table above). Workflow 'Boardforge continue' is archived, no scheduled runs remain. Handoff corrected from stale unchecked boxes.
 - 2026-11-08: STEP step 2 done (units). Bug found by a real file: name-suffix matching mistook an assembly link for a shape; now structural. Scheduled workflow 'Boardforge continue' created (every 30 min, 12 runs).
 - 2026-11-08: STEP step 1 done (Part 21 parser). Found and fixed an off-by-whitespace error offset bug; removed one redundant stripper branch proven equivalent by mutation.
