@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import fs from "node:fs"
 import { parsePart21 } from "../src/step/part21.ts"
 import { resolveLengthUnit, unitForContext, fileLengthUnit, shapeRepresentations, isRepresentationContext, MM } from "../src/step/units.ts"
+import { REF } from "./fixtures.ts"
 
 const file = (data: string) => `ISO-10303-21;\nHEADER;\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\nENDSEC;\nDATA;\n${data}\nENDSEC;\nEND-ISO-10303-21;\n`
 const unit = (d: string, id = 1) => { const p = parsePart21(file(d)); return resolveLengthUnit(p, p.entities.get(id)!) }
@@ -106,7 +107,6 @@ test("a broken unit definition falls back with the reason, instead of throwing o
 })
 
 // ---- real files
-const REF = "/app/conversations/6af0495dcaf878e1398c29c6/refs/"
 const realFiles = [
   "circuit-json-to-step/test/fixtures/kicad-models/R_0603_1608Metric.step",
   "circuit-json-to-gltf/tests/assets/TO-92_Inline.step",

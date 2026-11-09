@@ -6,6 +6,7 @@ import { Geometry } from "../src/step/geometry.ts"
 import { Brep } from "../src/step/brep.ts"
 import { dot, len, scale, sub, add, type V3 } from "../src/step/vec.ts"
 import { boxStep } from "./brep-box.ts"
+import { REF } from "./fixtures.ts"
 
 const near = (a: number, b: number, e = 1e-9, m = "") => assert.ok(Math.abs(a - b) <= e, `${m} ${a} vs ${b}`)
 
@@ -154,7 +155,6 @@ test("BREP_WITH_VOIDS reads the outer shell and the void shells as separate shel
 })
 
 // ---------- real models
-const REF = "/app/conversations/6af0495dcaf878e1398c29c6/refs/"
 const realFiles = [
   "circuit-json-to-step/test/fixtures/kicad-models/R_0603_1608Metric.step",
   "circuit-json-to-gltf/tests/assets/TO-92_Inline.step",

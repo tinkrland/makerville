@@ -4,7 +4,7 @@ This file is how work continues when nobody is watching. A scheduled run (or a f
 does the next unchecked step, runs the tests, commits, and updates this file. Keep it truthful.
 
 ## Ground rules (from the owner, always apply)
-- Repo: `/app/conversations/6af0495dcaf878e1398c29c6/boardforge`. Git identity must be `tinkrland <324020321+tinkrland@users.noreply.github.com>`. Check `git var GIT_AUTHOR_IDENT` before committing.
+- Repo root is wherever this file is. Real STEP fixtures live in `$BOARDFORGE_REFS` (default `../refs/`). Git identity must be `tinkrland <324020321+tinkrland@users.noreply.github.com>`. Check `git var GIT_AUTHOR_IDENT` before committing.
 - Standalone: no runtime network calls. Original code, or ported code credited in `NOTICE.md` (source, licence, author).
 - KiCad 9 native formats. Autorouters stay separate swappable modules. Everything is a thin shell over the headless JSON engine in `src/engine/`.
 - Run tests with: `node --experimental-strip-types --test tests/*.test.ts` (must stay green; currently ~200 tests).

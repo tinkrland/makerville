@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs"
 import { parsePart21, decodeString, StepParseError, isRef, isEnum, isDerived, isTyped, type Part21 } from "../src/step/part21.ts"
+import { REF } from "./fixtures.ts"
 
 /** wrap DATA lines in a minimal valid file */
 const file = (data: string, header = "FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));") =>
@@ -174,7 +175,6 @@ test("error offset inside a multi-line entity points at the right line", () => {
 })
 
 // ---- real files
-const REF = "/app/conversations/6af0495dcaf878e1398c29c6/refs/"
 const real: [string, string][] = [
   ["R_0603 (KiCad library)", "circuit-json-to-step/test/fixtures/kicad-models/R_0603_1608Metric.step"],
   ["TO-92", "circuit-json-to-gltf/tests/assets/TO-92_Inline.step"],

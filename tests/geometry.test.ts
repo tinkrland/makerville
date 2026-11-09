@@ -4,6 +4,7 @@ import fs from "node:fs"
 import { parsePart21 } from "../src/step/part21.ts"
 import { Geometry, member, hasMember } from "../src/step/geometry.ts"
 import { dist, len, cross, sub, norm, type V3 } from "../src/step/vec.ts"
+import { REF } from "./fixtures.ts"
 
 const file = (data: string) => `ISO-10303-21;\nHEADER;\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\nENDSEC;\nDATA;\n${data}\nENDSEC;\nEND-ISO-10303-21;\n`
 const geo = (data: string) => { const p = parsePart21(file(data)); return { p, g: new Geometry(p) } }
@@ -206,7 +207,6 @@ test("member/hasMember reach into complex entities and also work for simple ones
 })
 
 // ---------- real fixtures: the edge-vertex agreement is the honest measurement
-const REF = "/app/conversations/6af0495dcaf878e1398c29c6/refs/"
 const realFiles = [
   "circuit-json-to-step/test/fixtures/kicad-models/R_0603_1608Metric.step",
   "circuit-json-to-gltf/tests/assets/TO-92_Inline.step",

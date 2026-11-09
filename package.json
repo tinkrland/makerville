@@ -1,7 +1,7 @@
 {
   "name": "boardforge",
   "version": "0.0.1",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Browser-first PCB editor core: board model, KiCad round trip, DRC, enclosure generation. No runtime dependencies, no network.",
   "scripts": {
