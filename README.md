@@ -49,9 +49,17 @@ Optional tools make more tests run. Without them those tests are skipped, not fa
 - `openscad` (2021.01 was used to bless the goldens) enables the compiled-geometry tests and golden suite
   (`node --experimental-strip-types specs/run.ts`).
 - Real STEP models enable the reader's fixture tests. They are **not in this repository**: KiCad's 3D library
-  is CC-BY-SA 4.0 with an exception that does not cover redistributing it as a collection. Point
-  `BOARDFORGE_REFS` at a folder containing the models (default: `../refs/` next to this repo). On a clean
-  clone about 37 tests skip for this reason; the rest pass.
+  is CC-BY-SA 4.0 with an exception that does not cover redistributing it as a collection, and the connector
+  models belong to their authors. Point `BOARDFORGE_REFS` at a folder containing them (default: `../refs/`
+  next to this repo).
+
+**Read this before trusting a green run.** The STEP reader is checked two ways: small hand-built solids
+(cubes, cylinders, holes, with known volumes), which are in the repo and always run, and six real CAD models
+(a resistor, a transistor, a switch, a USB-C connector, a PLCC socket, a metal contact), which are not. Every
+check that opens a real model is skipped on a clean clone. That is the larger share of the reader's
+verification, so a clean clone reports a pass for the STEP code while testing it much less than the author's
+machine does. The summary line says how many were skipped; if that number is large, the real-model checks did
+not run.
 
 ## What is not done
 
