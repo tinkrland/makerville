@@ -147,14 +147,38 @@ function segmentsCross(a: P2, b: P2, c: P2, d: P2): boolean {
 }
 
 /**
+ * Do segments a-b and c-d lie on one line and share a stretch of positive length (not just a point)?
+ * Relative tolerance on the collinearity test, so a long segment and a short one are judged alike.
+ */
+export function overlapsAlong(a: P2, b: P2, c: P2, d: P2): boolean {
+  const len1 = Math.hypot(b[0] - a[0], b[1] - a[1]), len2 = Math.hypot(d[0] - c[0], d[1] - c[1])
+  if (len1 < 1e-15 || len2 < 1e-15) return false
+  const tol = 1e-9
+  // distance of c and d from the line through a-b
+  const off = (p: P2) => Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / len1
+  if (off(c) > tol * Math.max(1, len2) || off(d) > tol * Math.max(1, len2)) return false
+  // project c and d onto a-b as parameters in [0, len1]; the overlap is the intersection of the intervals
+  const ux = (b[0] - a[0]) / len1, uy = (b[1] - a[1]) / len1
+  const tc = (c[0] - a[0]) * ux + (c[1] - a[1]) * uy, td = (d[0] - a[0]) * ux + (d[1] - a[1]) * uy
+  const lo = Math.max(0, Math.min(tc, td)), hi = Math.min(len1, Math.max(tc, td))
+  return hi - lo > 1e-9 * Math.max(1, len1)
+}
+
+/**
  * Is M -> P a legal bridge? The open segment must not cross any edge of the polygon, nor any edge of
  * any ring still to be attached (its own ring except the two edges meeting at M).
  */
 function bridgeIsClear(M: P2, P: P2, poly: P2[], rings: P2[][], own: P2[], ownIndex: number): boolean {
-  const crossesRing = (ring: P2[], skip: number, skip2: number) => {
+  const crossesRing = (ring: P2[], skip: number, skip2: number, alongOnly = false) => {
     for (let i = 0; i < ring.length; i++) {
       if (i === skip || i === skip2) continue
       const a = ring[i]!, b = ring[(i + 1) % ring.length]!
+      // A bridge that runs ALONG an edge (collinear, sharing more than one point) never "crosses" it, and
+      // is not excused by touching an endpoint either: it lays a zero-width spike over a real edge, and a
+      // polygon with that in it cannot be ear clipped. Test it before the endpoint exemption. Measured:
+      // a 2x1 grid of square holes was bridged along the second hole's own bottom edge and ear clipped to
+      // 1 triangle of 14; the PLCC44 socket's 44-hole face lost 60 of 257 mm2 the same way.
+      if (alongOnly && overlapsAlong(M, P, a, b)) return true
       // ignore an edge that merely touches M or P at an endpoint
       const sharesEndpoint = (q: P2, r: P2) => dist2(q, M) < 1e-12 || dist2(q, P) < 1e-12 || dist2(r, M) < 1e-12 || dist2(r, P) < 1e-12
       if (sharesEndpoint(a, b)) continue
@@ -166,9 +190,33 @@ function bridgeIsClear(M: P2, P: P2, poly: P2[], rings: P2[][], own: P2[], ownIn
   for (const r of rings) if (r !== own && crossesRing(r, -1, -1)) return false
   // the hole's own two edges at M share the endpoint, and are skipped by the endpoint rule
   void ownIndex
-  return !crossesRing(own, -1, -1)
+  // The one overlap that is never legitimate is a bridge laid along the edge of the very hole it leaves.
+  // (Overlap with the OUTER ring is fine and sometimes forced: a notch shares an edge with it.)
+  return !crossesRing(own, -1, -1, true)
 }
 const dist2 = (a: P2, b: P2) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
+
+/**
+ * Is direction d inside the interior wedge at a polygon vertex, where the boundary arrives from `prev` and
+ * leaves toward `next`?  For a counter-clockwise polygon the interior is on the LEFT of travel, so the wedge
+ * runs counter-clockwise from the outgoing direction (v -> next) round to the reversed incoming direction
+ * (v -> prev). d is inside when it lies strictly within that sweep.
+ *
+ * Needed because a vertex that is the anchor of several bridges appears several times in the bridged ring,
+ * and a new bridge has to be spliced at the visit whose wedge contains it. Splicing at the first visit
+ * orders the legs by when their holes were processed instead of by angle, which twists the polygon: the
+ * PLCC44 face anchored three bridges at one corner and ear clipping lost a third of its area.
+ */
+export function inWedge(v: P2, prev: P2, next: P2, d: P2): boolean {
+  const ang = (q: P2) => Math.atan2(q[1] - v[1], q[0] - v[0])
+  const TAU = Math.PI * 2
+  const up = (x: number) => ((x % TAU) + TAU) % TAU
+  const aOut = ang(next), aIn = ang(prev), aD = ang(d)
+  const sweep = up(aIn - aOut) || TAU // counter-clockwise from the outgoing edge to the reversed incoming edge
+  const off = up(aD - aOut)
+  const eps = 1e-12
+  return off > eps && off < sweep - eps
+}
 
 /**
  * Splice every hole into the outer ring with a bridge, producing one simple polygon.
@@ -217,6 +265,14 @@ export function bridgeHoles(outer: P2[], holes: P2[][]): P2[] {
       continue
     }
     const P = poly[pIdx]!
+    // P may occur several times (it anchors earlier bridges); splice at the visit whose interior wedge
+    // contains the direction of this bridge, not just at whichever visit was found first.
+    const visits: number[] = []
+    for (let i = 0; i < poly.length; i++) if (dist2(poly[i]!, P) < 1e-18) visits.push(i)
+    if (visits.length > 1) {
+      const fit = visits.find((i) => inWedge(P, poly[(i - 1 + poly.length) % poly.length]!, poly[(i + 1) % poly.length]!, M))
+      if (fit !== undefined) pIdx = fit
+    }
     const ring = hole.slice(hi).concat(hole.slice(0, hi))
     // poly.slice(0, pIdx + 1) already ends with P, so the bridge is  ...P, M, hole..., M, P, rest...
     // Adding a second P here would repeat the vertex and leave a zero-length edge, which then defeats

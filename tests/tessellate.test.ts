@@ -596,3 +596,98 @@ test("a clean face produces NO overlap warning, so the guard cannot fire on ordi
   const m = tessellate([{ id: 1, shells: [{ id: 1, closed: false, faces: [clean] }] }])
   assert.ok(!m.warnings.some((x) => /more than the region it covers/.test(x)), JSON.stringify(m.warnings))
 })
+
+// ======================= hole bridging: a bridge must not run along an edge
+// Regression found on the PLCC44 socket's top face (44 square holes, 119 boundary edges left without a
+// triangle edge). The cause was in bridgeHoles, not in ear clipping: a bridge that ran collinear with an
+// existing edge never "crossed" it, so it was accepted, and the polygon it made (a zero-width spike laid
+// over an edge) cannot be ear clipped. A 2x1 grid of square holes was enough to show it: 1 triangle of 14.
+{
+  type P = [number, number]
+  const grid = (nx: number, ny: number, pitch = 2, size = 0.8) => {
+    const outer: P[] = [[0, 0], [nx * pitch + pitch, 0], [nx * pitch + pitch, ny * pitch + pitch], [0, ny * pitch + pitch]]
+    const holes: P[][] = []
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const cx = pitch + i * pitch, cy = pitch + j * pitch, h = size / 2
+      holes.push([[cx - h, cy - h], [cx - h, cy + h], [cx + h, cy + h], [cx + h, cy - h]])
+    }
+    return { outer, holes, expectArea: (nx * pitch + pitch) * (ny * pitch + pitch) - nx * ny * size * size }
+  }
+  const covers = (poly: P[], tris: [number, number, number][]) => {
+    let area = 0
+    for (const [a, b, c] of tris) area += Math.abs((poly[b]![0] - poly[a]![0]) * (poly[c]![1] - poly[a]![1]) - (poly[c]![0] - poly[a]![0]) * (poly[b]![1] - poly[a]![1])) / 2
+    const used = new Set<string>()
+    for (const [a, b, c] of tris) for (const [x, y] of [[a, b], [b, c], [c, a]] as const) used.add(x < y ? `${x}_${y}` : `${y}_${x}`)
+    let missing = 0
+    for (let i = 0; i < poly.length; i++) { const j = (i + 1) % poly.length; if (!used.has(i < j ? `${i}_${j}` : `${j}_${i}`)) missing++ }
+    return { area, missing }
+  }
+  // 2x2 is NOT in this list: see the known-limitation test below.
+  for (const [nx, ny] of [[1, 1], [2, 1], [1, 2], [3, 1], [3, 3], [4, 4], [8, 8], [12, 4]] as const) {
+    test(`a ${nx}x${ny} grid of square holes bridges into a polygon that ear clips to the full area with every boundary edge used`, () => {
+      const g = grid(nx, ny)
+      const poly = bridgeHoles(g.outer, g.holes)
+      const tris = earClip(poly)
+      const c = covers(poly, tris)
+      // NOT poly.length - 2: a bridge walked out and back leaves a zero-area spike, which ear clipping
+      // rightly drops. Full area with every boundary edge used is the contract that matters.
+      assert.ok(tris.length > 0 && tris.length <= poly.length - 2, `${tris.length} triangles from ${poly.length} vertices`)
+      assert.ok(Math.abs(c.area - g.expectArea) < 1e-6, `area ${c.area} vs ${g.expectArea}`)
+      assert.equal(c.missing, 0, "every polygon edge must be an edge of some triangle")
+    })
+  }
+  /**
+   * KNOWN LIMITATION, pinned rather than hidden.
+   *
+   * A 2x2 grid of square holes still leaves 5.12 of 33.44 mm2 uncovered. The bridged polygon is simple
+   * (checked: no proper self-crossings) and has the exact right area, so bridging is not at fault. The
+   * leftover ring after clipping touches itself at one point, and a weakly-simple ring has no ear at that
+   * pinch, so ear clipping correctly reports that it cannot continue.
+   *
+   * Splitting such a ring at the repeated point was tried and reverted: the parts are not a clean
+   * region-plus-hole pair, so it broke the 1x1 grid (15.36 -> 16.00 mm2) and six existing tests. The real
+   * faces that hit this shape now tessellate watertight anyway (the PLCC44 socket's 44-hole face), so this
+   * is a degenerate arrangement of the synthetic generator, not a live defect. If it is ever fixed, this
+   * test fails and says so, which is the point of pinning the number.
+   */
+  test("KNOWN LIMITATION: a 2x2 grid still leaves exactly 5.12 mm2 uncovered (see the comment)", () => {
+    const g = grid(2, 2)
+    const poly = bridgeHoles(g.outer, g.holes)
+    const tris = earClip(poly)
+    const c = covers(poly, tris)
+    assert.ok(Math.abs(signedArea(poly) - g.expectArea) < 1e-6, "the bridged polygon itself is exact")
+    assert.ok(Math.abs(c.area - (g.expectArea - 5.12)) < 1e-6, `uncovered area changed: ${(g.expectArea - c.area).toFixed(4)} mm2 (was 5.12)`)
+    assert.equal(c.missing, 6, "missing boundary edges (was 6)")
+  })
+
+  test("no bridge in a hole grid is collinear with, or lies along, an edge of its own hole", () => {
+    for (const [nx, ny] of [[2, 1], [3, 3], [5, 2]] as const) {
+      const g = grid(nx, ny)
+      const poly = bridgeHoles(g.outer, g.holes)
+      // a bridge appears twice in the bridged polygon (out and back); an edge walked in both directions is a bridge
+      const dirs = new Set<string>()
+      for (let i = 0; i < poly.length; i++) { const a = poly[i]!, b = poly[(i + 1) % poly.length]!; dirs.add(`${a}|${b}`) }
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i]!, b = poly[(i + 1) % poly.length]!
+        if (!dirs.has(`${b}|${a}`)) continue
+        // This is a bridge. It must not run ALONG a hole edge. Collinear is not enough to condemn it: a
+        // bridge leaving a hole corner straight up is collinear with the hole edge leaving the same corner
+        // straight down, and that is legal (they share only an endpoint). Demand a shared stretch of
+        // positive length: collinear, same direction, and their spans overlap.
+        for (const h of g.holes) for (let k = 0; k < h.length; k++) {
+          const p = h[k]!, q = h[(k + 1) % h.length]!
+          const dx = q[0] - p[0], dy = q[1] - p[1]
+          const len = Math.hypot(dx, dy)
+          const ux = dx / len, uy = dy / len
+          const col = (r: P) => Math.abs((r[0] - p[0]) * uy - (r[1] - p[1]) * ux) < 1e-9
+          if (!col(a) || !col(b)) continue
+          // project onto the hole edge's direction and test the spans for a positive-length overlap
+          const ta = (a[0] - p[0]) * ux + (a[1] - p[1]) * uy
+          const tb = (b[0] - p[0]) * ux + (b[1] - p[1]) * uy
+          const lo = Math.max(0, Math.min(ta, tb)), hi = Math.min(len, Math.max(ta, tb))
+          assert.ok(hi - lo <= 1e-9, `${nx}x${ny}: bridge ${a} -> ${b} overlaps hole edge ${p} -> ${q} by ${(hi - lo).toFixed(4)} mm`)
+        }
+      }
+    }
+  })
+}
