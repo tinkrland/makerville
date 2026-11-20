@@ -401,7 +401,10 @@ test("the big TYPE-C model tessellates without crashing and its bounds match the
   assert.equal(raw.faces, 681, "faces that produced triangles")
   near(st.bounds[0]![0], -4.47, 1e-3); near(st.bounds[1]![0], 4.47, 1e-3)
   near(st.bounds[0]![2], -3.9525, 1e-3); near(st.bounds[1]![2], 3.9525, 1e-3)
-  near(st.volume, 113.97, 1e-2)
+  // The volume moved from 113.97 when boundary vertices started keeping their own curve positions instead
+  // of being re-lifted out of (u, v): that closed 316 open edges down to 28 on this model, so the old
+  // figure was measured on a surface missing real area. The tolerance stays tight so further drift shows.
+  near(st.volume, 114.03, 1e-2)
   // The 8 faces that produce nothing are degenerate seam slivers, and each must be REPORTED as such,
   // not as a surface failure. Getting this wrong sends the reader chasing a nonexistent bug.
   const degenerate = raw.warnings.filter((m) => /encloses no area/.test(m))

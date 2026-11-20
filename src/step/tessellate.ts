@@ -547,7 +547,31 @@ export function tessellateFace(face: Face, opts: TessOptions = DEFAULT_TESS): Fa
   const tri = triangulate(poly)
   const vertsUv = tri.verts.slice()
   const { refined, worstDeviation, overTolerance } = refineTris(face.surface, vertsUv, tri.tris, scale, opts.tolerance)
-  const positions: V3[] = vertsUv.map(([u, v]) => face.surface.at(u / scale[0], v / scale[1]))
+  /**
+   * Boundary vertices keep the exact position the file's curves put them at.
+   *
+   * Lifting every vertex back out of (u, v) is wrong where the file is slightly inconsistent with itself:
+   * on the TYPE-C connector, two hole loops sit 4.456e-3 mm off their own face's plane, so projecting and
+   * re-lifting silently snapped them onto the plane. The faces on the other side of those edges keep the
+   * original curve point, so the two sides disagreed by 4.5 microns and the edges stayed open no matter
+   * how tightly they were welded. Snapping a boundary vertex back to its own loop sample makes both sides
+   * of every shared edge use the identical point.
+   *
+   * Only boundary samples are snapped (keyed on their (u, v), which is exact for a sample that came
+   * through the same projection). Interior points and refinement midpoints are lifted as before.
+   */
+  const boundary3d = new Map<string, V3>()
+  for (let i = 0; i < loops3d.length; i++) {
+    const uv = toUv(face.surface, loops3d[i]!, scale)
+    for (let k = 0; k < uv.length; k++) {
+      const key = `${Math.round(uv[k]![0] * 1e9)},${Math.round(uv[k]![1] * 1e9)}`
+      if (!boundary3d.has(key)) boundary3d.set(key, loops3d[i]![k]!)
+    }
+  }
+  const positions: V3[] = vertsUv.map(([u, v]) => {
+    const snap = boundary3d.get(`${Math.round(u * 1e9)},${Math.round(v * 1e9)}`)
+    return snap ? [snap[0], snap[1], snap[2]] : face.surface.at(u / scale[0], v / scale[1])
+  })
   const raw: [number, number, number][] = []
   for (const [a, b, c] of tri.tris) {
     const p = positions[a]!, q = positions[b]!, r = positions[c]!
