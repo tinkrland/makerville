@@ -64,7 +64,38 @@ Sizes and volumes look right on all six; closure does not. The acceptance bar (e
 4. Wire PCB change -> case regeneration as an engine command.
 5. EasyEDA adapter, KiCad IPC plugin, web shell (all thin).
 
+## Open edges: measured state 2026-11-20
+
+| model | open edges | non-manifold | note |
+| --- | --- | --- | --- |
+| R_0603 | 0 | 0 | watertight |
+| TO-92 | 0 | 0 | watertight |
+| Contact | 0 | 0 | watertight |
+| PLCC44 | 0 | 0 | watertight (was 112 open) |
+| solidworks box | 0 | 0 | watertight |
+| TYPE-C | 28 | 5 | was 316 open / 9 non-manifold |
+
+TYPE-C's remaining 28, measured with `gap.ts` (nearest non-partner edge to each open edge):
+
+- **8 edges sit exactly on a chain of shorter edges** (off-line distance 4e-16 .. 3.6e-15). Probe
+  (`probe.ts`) confirms 8 stray vertices lie exactly on the long edge 2311->2335 at
+  y=0.15, z=-2.9325, at t = 0.11, 0.21, 0.32, 0.42, 0.54, 0.64, 0.75, 0.85. `stitchTJunctions`
+  reports exactly 8 splits and then converges (a second pass adds 0), so it is splitting at those
+  strays and the edges still do not pair. **Next step: after a split, check whether the two halves
+  actually found partners, and if not why** (likely the partner edges are used twice already, or the
+  halves are created on the wrong side of the shared edge).
+- **The other 20 are slivers of 4e-3 .. 2.8e-2 mm** between faces whose boundaries disagree slightly
+  (the same class of source inconsistency as the 4.5 um hole loops, but on interior/refined points
+  rather than loop vertices). Loosening the stitch tolerance to 1e-2 does not close them (open 28 -> 29),
+  so tolerance is not the lever.
+- Volume is stable at 114.03 across every welding/stitching setting tried, so these gaps do not
+  distort the solid.
+
+Do not chase these with a bigger tolerance. The two real leads are the post-split partner check and
+whether the sliver faces need their boundary snapped to the shared curve the way loop vertices now are.
+
 ## Log (newest first; add a line per working session)
+- 2026-11-20: boundary vertices keep their own curve positions (TYPE-C 316->28 open, Contact watertight); measured and recorded the remaining TYPE-C gaps above. Suite 369 pass.
 - 2026-11-09: Steps 3 to 6 are committed (earlier scheduled runs). Re-measured all six real models: three close, three do not (table above). Workflow 'Boardforge continue' is archived, no scheduled runs remain. Handoff corrected from stale unchecked boxes.
 - 2026-11-08: STEP step 2 done (units). Bug found by a real file: name-suffix matching mistook an assembly link for a shape; now structural. Scheduled workflow 'Boardforge continue' created (every 30 min, 12 runs).
 - 2026-11-08: STEP step 1 done (Part 21 parser). Found and fixed an off-by-whitespace error offset bug; removed one redundant stripper branch proven equivalent by mutation.
