@@ -75,24 +75,38 @@ Sizes and volumes look right on all six; closure does not. The acceptance bar (e
 | solidworks box | 0 | 0 | watertight |
 | TYPE-C | 28 | 5 | was 316 open / 9 non-manifold |
 
-TYPE-C's remaining 28, measured with `gap.ts` (nearest non-partner edge to each open edge):
+TYPE-C's remaining 28, measured with `gap2.ts` on the welded+stitched mesh:
 
-- **8 edges sit exactly on a chain of shorter edges** (off-line distance 4e-16 .. 3.6e-15). Probe
-  (`probe.ts`) confirms 8 stray vertices lie exactly on the long edge 2311->2335 at
-  y=0.15, z=-2.9325, at t = 0.11, 0.21, 0.32, 0.42, 0.54, 0.64, 0.75, 0.85. `stitchTJunctions`
-  reports exactly 8 splits and then converges (a second pass adds 0), so it is splitting at those
-  strays and the edges still do not pair. **Next step: after a split, check whether the two halves
-  actually found partners, and if not why** (likely the partner edges are used twice already, or the
-  halves are created on the wrong side of the shared edge).
-- **The other 20 are slivers of 4e-3 .. 2.8e-2 mm** between faces whose boundaries disagree slightly
-  (the same class of source inconsistency as the 4.5 um hole loops, but on interior/refined points
-  rather than loop vertices). Loosening the stitch tolerance to 1e-2 does not close them (open 28 -> 29),
-  so tolerance is not the lever.
-- Volume is stable at 114.03 across every welding/stitching setting tried, so these gaps do not
-  distort the solid.
+**Correction to the earlier note in this file:** they are NOT T-junctions. `tj.ts` shows the long edge at
+y=0.15, z=-2.9325 is split at all 8 strays and that line closes completely (0 open edges remain there
+after stitching). The earlier reading came from measuring before stitching. Do not re-chase T-junctions.
 
-Do not chase these with a bigger tolerance. The two real leads are the post-split partner check and
-whether the sliver faces need their boundary snapped to the shared curve the way loop vertices now are.
+**The real cause is in uv triangulation of cylinder faces.** `lost.ts` tessellates each face alone and
+compares its triangles against the boundary segments its own loop should produce:
+
+| face | surface | boundary segments expected | missing from its own triangles |
+| --- | --- | --- | --- |
+| #12298 | plane | 72 | 0 |
+| #14655 | cylinder | 19 | **7** |
+
+The 7 missing are consecutive segments of the circular boundary (edge entity 18059) on a **cylinder**.
+Both faces reference the same edge entity and `sampleEdge` returns identical points for both (verified in
+`same.ts`: the two uses give the same 9 points, reversed), so the vertices agree and the gap is not a
+sampling disagreement. The cylinder's triangles simply do not contain its own boundary edges, so the
+plane's matching edges have nothing to pair with.
+
+Next step: in `tessellateFace`, after triangulation, check that every boundary segment of every loop
+appears as a triangle edge, and investigate the cylinder (u, v) unwrap for this loop
+(line,circle,line,circle,line,circle). The seam unwrapping is the suspect, not the welding.
+
+Other facts worth keeping:
+- Welding tolerance is not the lever. `pipe.ts` across weld 1e-6 .. 5e-2 and several weld/stitch orders:
+  TYPE-C stays at 28 open edges at every setting that does not introduce non-manifold edges (2e-2 adds
+  44 of them, 5e-2 adds 304 and drops 144 triangles). PLCC and Contact stay watertight throughout.
+- Volume is stable at 114.03 across every setting, so these gaps do not distort the solid.
+- Two edges are near-duplicates (gap 1.9e-11) rather than slivers; the other 26 are 4 .. 45 um apart.
+
+Do not chase these with a bigger tolerance, and do not chase T-junctions.
 
 ## Log (newest first; add a line per working session)
 - 2026-11-20: boundary vertices keep their own curve positions (TYPE-C 316->28 open, Contact watertight); measured and recorded the remaining TYPE-C gaps above. Suite 369 pass.
