@@ -37,7 +37,15 @@ Real models are B-rep. Face mix in the five reference files: planes ~70%, then c
 - [x] 7. `assembly.ts` NEXT_ASSEMBLY_USAGE_OCCURRENCE + ITEM_DEFINED_TRANSFORMATION placements. Done. 6 tests. Two traps: the transform ref lives in the `REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION` PART of a complex instance, not in `args`; and ITEM_DEFINED_TRANSFORMATION starts with TWO `$` fields, so take the first two REF args rather than indexing. IMPORTANT: these exporters already store the B-reps in world coordinates, so applying a placement would be wrong (measured: the pin's as-is max z is exactly the 8.4 the placement carries; the connector would shift 1.3525 mm off its declared extents). readStep uses the solids as-is and exposes the placements for callers that want the hierarchy. A test pins that applying them would move the model.
 - [x] 8. `colour.ts` STYLED_ITEM -> ... -> COLOUR_RGB. Done. 5 tests. Colour is per styled ITEM (usually a whole solid, sometimes a face), so look up the face first and fall back to the solid. Measured: pin 2/2 solids (copper + brass), connector 42/42 solids in 3 colours (gold, shell, plastic), contact 1/1 copper, zero warnings. A broken chain is reported by name so a grey model says why.
 - [x] 9. `index.ts` `readStep(text|bytes) -> { meshes, boundsMm, volumeMm3, triangles, placements, warnings }`. Done. 5 tests, 386 pass overall. Units ARE applied here (the rest of the reader works in file units, positions come out in mm via fileLengthUnit); assembly placements are NOT applied (see step 7). Meshes are grouped per solid per colour, so a face-level style overrides its solid. Tessellation warnings are surfaced, not dropped. Measured through this one call: box 48.000 mm3 exact, R_0603 1.6x0.8x0.45 / 0.535 mm3 / 3 colours, TYPE-C 42 meshes / 114.030 mm3 / 3 colours / 8 named seam-sliver warnings, PLCC 1045.076 mm3. Note the box is 24 triangles not 12: quads are fanned from their centroid, which is correct but not minimal.
-- [ ] 10. Oracle test: for each real fixture compare our mesh to `kicad-cli pcb export` output or a hand-made board using the model (bounding box within 0.05 mm, volume within 2%, watertight where the solid is closed).
+- [x] 10. Oracle test. Done. `tools/oracle.ts` writes a throwaway board carrying the model at (200,200) with a
+  1x1 mm outline at (100,100), runs `kicad-cli pcb export stl`, splits the STL into connected components to
+  drop the board slab, and compares SORTED extents and volume (per-axis would test KiCad's board frame, which
+  flips Y, not the geometry). 8 tests, 394 pass. Measured margins are real, not lucky: worst extent error
+  0.0194 mm (TO-92) against a 0.05 limit, worst volume error 0.53% against 2%. TYPE-C gives 41 components in
+  KiCad against our 42 solids, i.e. two of our solids touch and merge there; not a defect.
+  A guard test scales a reading by 5% and asserts the oracle FAILS, so the oracle cannot pass vacuously.
+  Two parsing traps fixed while writing it: STL number regexes must allow a signed exponent (`e-05`), and the
+  `solid` header is not a reliable binary/ASCII tell (use the 84 + 50n byte count).
 - [ ] 11. Wire into the preview: `Footprint.model = { path, offset, rotation, scale }` is already in the model; a footprint with a model renders its mesh instead of the box.
 - [ ] 12. Writer side: embed/emit models in `.kicad_pcb` (`(model "path" (offset) (scale) (rotate))`) so KiCad shows them.
 
@@ -120,6 +128,9 @@ pins 28 open at 1e-4 against 12 at the default.
 Do not chase these with a bigger tolerance, and do not chase T-junctions.
 
 ## Log (newest first; add a line per working session)
+- 2026-11-21: step 10 done (kicad-cli oracle, 394 tests). All six fixtures agree with KiCad's own export on
+  extents (worst 0.0194 mm) and volume (worst 0.53%). Steps 11 and 12 remain: render a footprint's model mesh
+  in the preview instead of its box, and emit models into .kicad_pcb.
 - 2026-11-21: step 9 done (readStep single entry point, units applied, 386 tests). Steps 10-12 remain: the kicad-cli oracle comparison, wiring the preview to use a footprint's model mesh, and the writer side.
 - 2026-11-21: steps 7 and 8 done (assembly placements, colours). 381 tests pass. TYPE-C still 12 open edges, all in one chamfer sliver where the file's own surfaces do not meet; shared edges join correctly on both sides.
 - 2026-11-20: boundary vertices keep their own curve positions (TYPE-C 316->28 open, Contact watertight); measured and recorded the remaining TYPE-C gaps above. Suite 369 pass.
