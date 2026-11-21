@@ -394,6 +394,22 @@ test("real push switch: bounds and stability", { skip: !has(REAL_SW) }, () => {
   near(st.bounds[1]![2], 1.9, 1e-6)
   near(st.volume, 16.7008, 1e-3)
 })
+// The curved-face T-junction case, pinned. A cylinder refines its triangles and so subdivides the circular
+// edge it shares with a flat neighbour that needs no refinement; those extra points sit 4-8 microns off the
+// neighbour's straight edge. Stitching at the float-noise figure (1e-4) cannot see them and 28 edges stay
+// open; stitching at the chord tolerance the mesh already promises closes it to 12. 0.05 over-splits and
+// makes it worse, which is why the tolerance is tied to DEFAULT_TESS rather than raised by hand.
+test("real TYPE-C: stitching at the tessellation tolerance closes the curved-face T-junctions", { skip: !has(REAL_TYPE_C) }, () => {
+  const { w } = meshOf(fs.readFileSync(REAL_TYPE_C, "latin1"))
+  const tight = meshStats(stitchTJunctions(w, 1e-4).mesh)
+  const atTolerance = meshStats(stitchTJunctions(w).mesh)
+  assert.equal(tight.boundaryEdges, 28, "at 1e-4 the curved-face gaps stay open (the old behaviour)")
+  assert.equal(atTolerance.boundaryEdges, 12, "at the chord tolerance most of them close")
+  assert.ok(atTolerance.boundaryEdges < tight.boundaryEdges, "the default must be the better of the two")
+  assert.equal(atTolerance.nonManifoldEdges, 5, "and it must not trade open edges for non-manifold ones")
+  near(atTolerance.volume, 114.03, 1e-2)
+})
+
 test("the big TYPE-C model tessellates without crashing and its bounds match the model", { skip: !has(REAL_TYPE_C) }, () => {
   const { raw, w } = meshOf(fs.readFileSync(REAL_TYPE_C, "latin1"))
   const st = meshStats(w)

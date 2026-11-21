@@ -733,7 +733,18 @@ export function weld(mesh: Mesh, tol = 1e-6): Mesh {
  * not an improvement, so callers opt in. The better fix for the source models' T-junctions is to snap the
  * boundary segments against each other, which is still open (see HANDOFF.md).
  */
-export function stitchTJunctions(mesh: Mesh, tol = 1e-4): { mesh: Mesh; splits: number } {
+/**
+ * Close T-junctions: split an open edge wherever a neighbouring vertex sits on it.
+ *
+ * The default tolerance is the tessellation chord tolerance (DEFAULT_TESS.tolerance), not a float-noise
+ * figure, because that is the geometric error the mesh already promises. A curved face refines its
+ * triangles to stay within it, which subdivides the edges it shares with a flat neighbour that needs no
+ * refinement; the extra points then sit up to one chord's sagitta off the neighbour's straight edge. On the
+ * TYPE-C connector those points are 4-8 microns out, so the old 1e-4 default could never see them and 28
+ * edges stayed open. Stitching at 0.02 closes them down to 12 with no change to any other model and no
+ * change in volume; a tolerance of 0.05 over-splits and makes things worse, so this is not a knob to raise.
+ */
+export function stitchTJunctions(mesh: Mesh, tol = DEFAULT_TESS.tolerance): { mesh: Mesh; splits: number } {
   const positions = mesh.positions.slice()
   let indices = mesh.indices.slice()
   const p3 = (i: number): V3 => [positions[i * 3]!, positions[i * 3 + 1]!, positions[i * 3 + 2]!]
@@ -782,6 +793,16 @@ export function stitchTJunctions(mesh: Mesh, tol = 1e-4): { mesh: Mesh; splits: 
   for (let pass = 0; pass < 12; pass++) {
     const uses = new Map<string, number>()
     for (let t = 0; t < indices.length; t += 3) for (const [i, j] of [[indices[t], indices[t + 1]], [indices[t + 1], indices[t + 2]], [indices[t + 2], indices[t]]] as [number, number][]) uses.set(k(i!, j!), (uses.get(k(i!, j!)) ?? 0) + 1)
+    // A vertex is worth splitting at only if it is an END of some other open edge. Otherwise the split
+    // creates two edges that still have no partner, which is how the coarser tolerance turned 5 non-manifold
+    // edges into 9 without closing anything (measured on the TYPE-C connector).
+    const openEnds = new Set<number>()
+    for (const [key, count] of uses) {
+      if (count !== 1) continue
+      const [i, j] = key.split(",").map(Number)
+      openEnds.add(i!)
+      openEnds.add(j!)
+    }
 
     let thisPass = 0
     const next: number[] = []
@@ -790,7 +811,7 @@ export function stitchTJunctions(mesh: Mesh, tol = 1e-4): { mesh: Mesh; splits: 
       let split = false
       for (const [x, y, z] of [[a, b, c], [b, c, a], [c, a, b]] as [number, number, number][]) {
         if (uses.get(k(x, y)) !== 1) continue // an edge shared by two triangles is already closed
-        const strays = straysOn(x, y, [a, b, c])
+        const strays = straysOn(x, y, [a, b, c]).filter((v) => openEnds.has(v))
         if (strays.length === 0) continue
         // split at the first stray only: (x, s, z) and (s, y, z). Both halves keep the winding.
         const s = strays[0]!
