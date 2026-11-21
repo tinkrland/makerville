@@ -73,9 +73,9 @@ Sizes and volumes look right on all six; closure does not. The acceptance bar (e
 | Contact | 0 | 0 | watertight |
 | PLCC44 | 0 | 0 | watertight (was 112 open) |
 | solidworks box | 0 | 0 | watertight |
-| TYPE-C | 28 | 5 | was 316 open / 9 non-manifold |
+| TYPE-C | 12 | 5 | was 316 open / 9 non-manifold; then 28 after the boundary-position fix |
 
-TYPE-C's remaining 28, measured with `gap2.ts` on the welded+stitched mesh:
+TYPE-C's remaining gaps, measured with `gap2.ts` on the welded+stitched mesh:
 
 **Correction to the earlier note in this file:** they are NOT T-junctions. `tj.ts` shows the long edge at
 y=0.15, z=-2.9325 is split at all 8 strays and that line closes completely (0 open edges remain there
@@ -105,6 +105,17 @@ Other facts worth keeping:
   44 of them, 5e-2 adds 304 and drops 144 triangles). PLCC and Contact stay watertight throughout.
 - Volume is stable at 114.03 across every setting, so these gaps do not distort the solid.
 - Two edges are near-duplicates (gap 1.9e-11) rather than slivers; the other 26 are 4 .. 45 um apart.
+
+**Resolved 2026-11-21: it was refinement, not welding and not T-junctions.** A curved face refines its
+triangles to stay inside the chord tolerance, and that subdivides the circular edge it shares with a flat
+neighbour that needs no refinement. The extra points sit 4-8 um off the neighbour's straight edge, so the
+old 1e-4 stitch default could never see them. Two changes to `stitchTJunctions`: the default tolerance is
+now the chord tolerance the mesh already promises (`DEFAULT_TESS.tolerance`), and it only splits at a point
+that is genuinely the end of another open edge (without that filter the same tolerance turned 5 non-manifold
+edges into 9 and closed nothing). Measured: TYPE-C 28 -> 12 open edges, non-manifold unchanged at 5, volume
+unchanged at 114.03, and the other five models stay fully watertight with identical volumes. Raising the
+tolerance to 0.05 over-splits (39 open, 6 non-manifold), so it is not a knob to raise. A regression test
+pins 28 open at 1e-4 against 12 at the default.
 
 Do not chase these with a bigger tolerance, and do not chase T-junctions.
 
