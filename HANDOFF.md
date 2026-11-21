@@ -20,7 +20,7 @@ does the next unchecked step, runs the tests, commits, and updates this file. Ke
 | Headless JSON engine (commands, undo/redo) | done |
 | Case generator + print tolerances + golden suite | done |
 | Footprint sourcing (import real footprints) | done: `readKicadMod`, library import, model paths, 25 tests |
-| Placement (auto) | not started |
+| Placement (auto) | **in progress**: legality checker done (15 tests), placer not started |
 | Schematic files (`.kicad_sch`) | not started |
 | 3D models: STEP reader | done (12/12 steps, see below) |
 | EasyEDA browser adapter, KiCad plugin, web shell | not started |
@@ -178,8 +178,24 @@ which keeps the module pure and usable from a browser shell. Paths are normalise
 
 Mutation-checked: ignoring the variable root and dropping duplicate tracking each fail a test.
 
+## Placement (auto), step 1 of 2: legality
+`src/placement/legal.ts` answers "is this arrangement legal", which an auto-placer must be able to do before it
+can search for one. A footprint's extent is its body rectangle turned by its rotation, so it is an ORIENTED box:
+- overlap is separating-axis on the two oriented boxes, exact for convex shapes, and returns the penetration
+  DEPTH in mm so a later annealer can score how bad an overlap is, not just that one exists;
+- clearance is enforced by growing both boxes by half the margin, so `clearance: 0.5` means a 0.5 mm gap;
+- on-board is corner containment PLUS an edge-crossing test. Corners alone are not enough: a part can sit over a
+  narrow slot in a concave outline with all four corners inside and still hang over the edge.
+`placementIssues(board, { clearance, margin, ignore })` returns the overlap and off-board problems; empty means
+legal. Mutation-checked: replacing the oriented test with an axis-aligned one fails the 45 degree test, and
+dropping the edge-crossing check fails the slot test.
+
+Next: the placer itself. It should move parts from a legal start, score wire length from the netlist plus
+penalties from `placementIssues`, and never report success while `placementIssues` is non-empty.
+
 ## Log (newest first; add a line per working session)
-- 2026-11-21 (later): footprint sourcing finished off with library import and model path resolution (431 tests).
+- 2026-11-21 (later still): placement legality done (446 tests). Library import and model paths closed out
+  footprint sourcing. No placer yet.- 2026-11-21 (later): footprint sourcing finished off with library import and model path resolution (431 tests).
   Two of the four failures on the way were the assistant's own: an order assertion that confused sorted paths
   with sorted names, and a missing `async` on a test using a dynamic import.- 2026-11-21: footprint sourcing done (415 tests). STEP reader closed out at 12/12. Next portions untouched:
   auto-placement, `.kicad_sch`, and the three shells (EasyEDA adapter, KiCad plugin, web app).
