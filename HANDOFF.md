@@ -19,7 +19,7 @@ does the next unchecked step, runs the tests, commits, and updates this file. Ke
 | Native KiCad 9 reader/writer, DRC, grid autorouter | done |
 | Headless JSON engine (commands, undo/redo) | done |
 | Case generator + print tolerances + golden suite | done |
-| Footprint sourcing (import real footprints) | done: `readKicadMod`, 9 tests |
+| Footprint sourcing (import real footprints) | done: `readKicadMod`, library import, model paths, 25 tests |
 | Placement (auto) | not started |
 | Schematic files (`.kicad_sch`) | not started |
 | 3D models: STEP reader | done (12/12 steps, see below) |
@@ -163,11 +163,25 @@ Two real bugs were caught by running all 22 fixtures instead of the two that wer
 
 Mutation-checked: forcing the body to come from the pads instead of the courtyard fails 2 tests.
 
-Not done yet: importing a whole library directory, and resolving a footprint's 3D model path to a file on disk
-(the path in the file is usually `${KICAD10_3DMODEL_DIR}/...`).
+### Library import and model paths (same session)
+`readFootprintLibrary(entries)` is pure (file contents in, footprints out) and `readFootprintLibraryDir(dir)` is the
+thin Node wrapper that walks a tree. A bad file is REPORTED and does not sink the rest; duplicate footprint names
+are listed once each and both copies kept; mounting holes go to their own list. Order is sorted by path, not by
+footprint name, so an import is reproducible and ids are stable across machines. Refs gives 18 footprints + 4
+holes from 22 files with 0 problems.
+
+`resolveModelPath(path, { roots, baseDir, exists })` in `src/model-path.ts` handles the three shapes real
+footprints use: `${KICAD10_3DMODEL_DIR}/...`, `../models/Socket.step`, and absolute. The variable is a KiCad
+configuration value with no way to discover it (no network, no KiCad install to ask), so the caller supplies
+`roots` and an unknown variable is REPORTED BY NAME with the option to set. The filesystem check is injected,
+which keeps the module pure and usable from a browser shell. Paths are normalised so two spellings compare equal.
+
+Mutation-checked: ignoring the variable root and dropping duplicate tracking each fail a test.
 
 ## Log (newest first; add a line per working session)
-- 2026-11-21: footprint sourcing done (415 tests). STEP reader closed out at 12/12. Next portions untouched:
+- 2026-11-21 (later): footprint sourcing finished off with library import and model path resolution (431 tests).
+  Two of the four failures on the way were the assistant's own: an order assertion that confused sorted paths
+  with sorted names, and a missing `async` on a test using a dynamic import.- 2026-11-21: footprint sourcing done (415 tests). STEP reader closed out at 12/12. Next portions untouched:
   auto-placement, `.kicad_sch`, and the three shells (EasyEDA adapter, KiCad plugin, web app).
 - 2026-11-21: steps 11 and 12 done, 406 tests. The STEP feature's twelve steps are now all ticked. Still true:
   TYPE-C keeps 12 open edges in one chamfer sliver where the source file's own surfaces do not meet, and the 2x2
