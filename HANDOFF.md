@@ -46,8 +46,22 @@ Real models are B-rep. Face mix in the five reference files: planes ~70%, then c
   A guard test scales a reading by 5% and asserts the oracle FAILS, so the oracle cannot pass vacuously.
   Two parsing traps fixed while writing it: STL number regexes must allow a signed exponent (`e-05`), and the
   `solid` header is not a reliable binary/ASCII tell (use the 84 + 50n byte count).
-- [ ] 11. Wire into the preview: `Footprint.model = { path, offset, rotation, scale }` is already in the model; a footprint with a model renders its mesh instead of the box.
-- [ ] 12. Writer side: embed/emit models in `.kicad_pcb` (`(model "path" (offset) (scale) (rotate))`) so KiCad shows them.
+- [x] 11. `place.ts` the bridge a preview consumes. Done, 8 tests. NOTE: there is no renderer in this repo (it is
+  a headless core), so step 11 is the transform, not UI wiring. `placeFootprintModel(result, footprint)` returns
+  meshes in the BOARD MODEL frame (mm, x right, y up, z up, z=0 at the board top), so a renderer just draws them
+  and falls back to the body box when a footprint has no model. `footprintModelMatrix` builds scale -> rotate
+  (X then Y then Z) -> model offset -> back-side flip -> footprint rotation -> footprint position.
+  The chain was MEASURED with `tools/probe-transform.ts` (same model front and back, offsets, rotations 0/45/90,
+  reading KiCad's own STL): back side negates y and z and leaves x alone whatever the rotation; a quarter turn
+  keeps the distance and lands square. The rotation DIRECTION is NOT measurable from KiCad's export (its 3D
+  frame cannot be pinned from outside: y sign is a convention and it shifts z by board thickness), so it follows
+  model.ts's documented y-up counter-clockwise convention and is flagged in the module header as the one line to
+  flip if a preview ever looks mirrored. Tests assert the frame-free facts plus a kicad-cli extents check.
+- [x] 12. Writer side. Done, 4 tests. The writer emits `(model "path" (offset (xyz)) (scale (xyz)) (rotate (xyz)))`
+  always writing all three blocks (KiCad's parser expects them); the reader now keeps offset/scale/rotate, not
+  just the path, so a model rotated 90 degrees survives a round trip. The decisive test writes a board
+  referencing a real STEP fixture and has `kicad-cli` export its 3D view: the contact's 4.005 mm^3 of geometry
+  appears in KiCad's own output, which proves the emitted block is valid and resolvable, not merely well-formed.
 
 Acceptance for the whole STEP feature: all five reference files tessellate with 0 errors, bounding boxes match the STEP's own declared extents, closed solids are watertight (each edge shared by exactly two triangles), and total volume is within 2% of an independent computation. Unsupported surface types produce a named warning and are skipped, never a crash or a silent hole.
 
@@ -128,6 +142,9 @@ pins 28 open at 1e-4 against 12 at the default.
 Do not chase these with a bigger tolerance, and do not chase T-junctions.
 
 ## Log (newest first; add a line per working session)
+- 2026-11-21: steps 11 and 12 done, 406 tests. The STEP feature's twelve steps are now all ticked. Still true:
+  TYPE-C keeps 12 open edges in one chamfer sliver where the source file's own surfaces do not meet, and the 2x2
+  hole grid is a pinned known limitation. A preview UI does not exist yet; place.ts is what it will consume.
 - 2026-11-21: step 10 done (kicad-cli oracle, 394 tests). All six fixtures agree with KiCad's own export on
   extents (worst 0.0194 mm) and volume (worst 0.53%). Steps 11 and 12 remain: render a footprint's model mesh
   in the preview instead of its box, and emit models into .kicad_pcb.

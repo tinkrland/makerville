@@ -188,6 +188,21 @@ function footprintNode(f: Footprint, P: (p: Pt) => Pt, useNet: (n: string) => nu
   }
 
   for (const [pi, p] of f.pads.entries()) out.push(padNode(f, p, pi, useNet))
+
+  // KiCad always writes all three blocks, and its own parser expects them, so emit the defaults explicitly
+  // rather than omitting a block that happens to be the identity.
+  if (f.model) {
+    const xyz = (v: [number, number, number]) => S("xyz", v[0], v[1], v[2])
+    out.push(
+      S(
+        "model",
+        q(f.model.path),
+        S("offset", xyz(f.model.offset ?? [0, 0, 0])),
+        S("scale", xyz(f.model.scale ?? [1, 1, 1])),
+        S("rotate", xyz(f.model.rotate ?? [0, 0, 0])),
+      ),
+    )
+  }
   return out
 }
 

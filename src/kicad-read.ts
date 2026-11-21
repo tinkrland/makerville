@@ -214,7 +214,23 @@ export function readKicadPcb(text: string): ReadResult {
     }
     if (m3) {
       const path = at(m3, 1)
-      if (path) fp.model = { path }
+      if (path) {
+        // KiCad writes (model "path" (offset (xyz ...)) (scale (xyz ...)) (rotate (xyz ...))). All three
+        // blocks matter: a footprint whose model is rotated 90 degrees renders wrong if only the path is kept.
+        const xyz = (block: List | undefined): [number, number, number] | undefined => {
+          const v = first(block ?? [], "xyz")
+          const x = numAt(v, 1), y = numAt(v, 2), z = numAt(v, 3)
+          return x === undefined || y === undefined || z === undefined ? undefined : [x, y, z]
+        }
+        const model: NonNullable<Footprint["model"]> = { path }
+        const o = xyz(first(m3, "offset"))
+        const sc = xyz(first(m3, "scale"))
+        const ro = xyz(first(m3, "rotate"))
+        if (o) model.offset = o
+        if (sc) model.scale = sc
+        if (ro) model.rotate = ro
+        fp.model = model
+      }
     }
     fps.push(fp)
   }
