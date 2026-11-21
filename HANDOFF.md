@@ -19,10 +19,10 @@ does the next unchecked step, runs the tests, commits, and updates this file. Ke
 | Native KiCad 9 reader/writer, DRC, grid autorouter | done |
 | Headless JSON engine (commands, undo/redo) | done |
 | Case generator + print tolerances + golden suite | done |
-| Footprint sourcing (import real footprints) | not started |
+| Footprint sourcing (import real footprints) | done: `readKicadMod`, 9 tests |
 | Placement (auto) | not started |
 | Schematic files (`.kicad_sch`) | not started |
-| 3D models: STEP reader | **in progress** (see below) |
+| 3D models: STEP reader | done (12/12 steps, see below) |
 | EasyEDA browser adapter, KiCad plugin, web shell | not started |
 
 ## STEP reader plan (`src/step/`)
@@ -141,7 +141,34 @@ pins 28 open at 1e-4 against 12 at the default.
 
 Do not chase these with a bigger tolerance, and do not chase T-junctions.
 
+## Footprint sourcing (2026-11-21)
+`readKicadMod(text)` in `src/kicad-read.ts` turns a standalone `.kicad_mod` into a `Footprint`, in
+footprint-local millimetres at the origin. It is NOT a second parser: the `(footprint ...)` node parsing was
+extracted out of `readKicadPcb` into `footprintFrom(...)`, so the board reader and the file reader cannot drift
+apart. `lib` becomes the file's own name, since a standalone file carries no library nickname.
+
+Measured against the 22 fixtures in refs:
+- 0603: 2 pads at +-0.775, 0.9 x 0.95, body 2.96 x 1.46. The body is the COURTYARD rect, not the pad span
+  (2.45) and not the fab body (1.6 x 0.8). This feeds the case generator, so a test pins all three numbers.
+- DIP-10: 10 through-hole pads, each with a drill. QFN-60-1EP: 70 SMD pads, body 8.2 x 8.2.
+- Four `pad_zone_connect_*` files are mounting holes (single npth, 3.2 mm drill) and come back as a hole, not a
+  footprint.
+- `fp_poly` is not modelled yet and is REPORTED in `skipped`, never silently dropped.
+
+Two real bugs were caught by running all 22 fixtures instead of the two that were open:
+1. The extracted pad loop turned "skip this pad" (`continue`) into "abort the whole footprint" (`return null`),
+   so four files came back empty. Mechanical `continue` -> `return null` substitution is not safe.
+2. KiCad 5/6 files start with `(module ...)`, not `(footprint ...)`, and were refused outright. Both roots are
+   accepted now; two fixtures depend on it.
+
+Mutation-checked: forcing the body to come from the pads instead of the courtyard fails 2 tests.
+
+Not done yet: importing a whole library directory, and resolving a footprint's 3D model path to a file on disk
+(the path in the file is usually `${KICAD10_3DMODEL_DIR}/...`).
+
 ## Log (newest first; add a line per working session)
+- 2026-11-21: footprint sourcing done (415 tests). STEP reader closed out at 12/12. Next portions untouched:
+  auto-placement, `.kicad_sch`, and the three shells (EasyEDA adapter, KiCad plugin, web app).
 - 2026-11-21: steps 11 and 12 done, 406 tests. The STEP feature's twelve steps are now all ticked. Still true:
   TYPE-C keeps 12 open edges in one chamfer sliver where the source file's own surfaces do not meet, and the 2x2
   hole grid is a pinned known limitation. A preview UI does not exist yet; place.ts is what it will consume.

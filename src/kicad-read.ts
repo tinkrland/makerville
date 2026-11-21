@@ -23,6 +23,168 @@ export interface ReadResult {
 const PAGE: Record<string, Pt> = {} // reserved for future page-origin handling
 
 /** KiCad page coordinates are y-down; we recentre on the outline and flip */
+/**
+ * One `(footprint ...)` node to a Footprint. Shared by the board reader and the standalone .kicad_mod reader so
+ * the two cannot disagree about what a pad or a graphic means.
+ *
+ * Returns null for a node that is really a mounting hole (a single non-plated pad), which the board reader
+ * turns into a hole rather than a footprint; `holeIndex` keeps the generated id stable.
+ */
+function footprintFrom(f: List, skip: (k: string) => void, netOf: (l: List) => string, holeIndex: number): { fp: Footprint; hole: Board["holes"][number] | null } | null {
+  const Y = (y: number) => -y // flip once, recentre after
+  const lib = at(f, 1) ?? "unknown"
+  const atN = first(f, "at")
+  const fx = numAt(atN, 1) ?? 0
+  const fy = numAt(atN, 2) ?? 0
+  const rotKicad = numAt(atN, 3) ?? 0
+  const side: "top" | "bottom" = textField(f, "layer") === "B.Cu" ? "bottom" : "top"
+  let ref = ""
+  let value = ""
+  for (const p of all(f, "property")) {
+    const k = at(p, 1)
+    if (k === "Reference") ref = at(p, 2) ?? ""
+    if (k === "Value") value = at(p, 2) ?? ""
+  }
+  // older files use fp_text
+  for (const t of all(f, "fp_text")) {
+    if (at(t, 1) === "reference") ref = at(t, 2) ?? ref
+    if (at(t, 1) === "value") value = at(t, 2) ?? value
+  }
+
+  const pads: Pad[] = []
+  for (const p of all(f, "pad")) {
+    const kindTxt = at(p, 2)
+    const shape = at(p, 3) as Pad["shape"]
+    const kind: Pad["kind"] = kindTxt === "smd" ? "smd" : kindTxt === "np_thru_hole" ? "npth" : "thru"
+    if (kindTxt === "connect") {
+      // skip THIS pad and carry on: an edge-connector pad used to abort the whole footprint when the pad loop
+      // was extracted from the board reader, because a `continue` here became a `return null`
+      skip("edge-connector pads")
+      continue
+    }
+    const pat = first(p, "at")
+    const sz = first(p, "size")
+    const drill = field(p, "drill")
+    const lay: string[] = []
+    const ll = first(p, "layers")
+    if (ll) for (let i = 1; i < ll.length; i++) {
+      const v = at(ll, i)
+      if (v) lay.push(v)
+    }
+    const cu = lay.filter((x) => /\.Cu$/.test(x))
+    const layersOut = cu.length ? (cu.some((x) => x.startsWith("*")) ? ["F.Cu", "B.Cu"] : cu) : kind === "smd" ? [side === "top" ? "F.Cu" : "B.Cu"] : ["F.Cu", "B.Cu"]
+    pads.push({
+      name: at(p, 1) ?? "",
+      kind,
+      shape: (["rect", "circle", "oval", "roundrect"].includes(shape) ? shape : "rect") as Pad["shape"],
+      at: { x: numAt(pat, 1) ?? 0, y: -(numAt(pat, 2) ?? 0) },
+      size: { w: numAt(sz, 1) ?? 0, h: numAt(sz, 2) ?? numAt(sz, 1) ?? 0 },
+      drill: drill,
+      layers: layersOut,
+      net: netOf(p),
+    })
+  }
+
+  // a lone non-plated pad in a footprint that is just a hole becomes a MountHole
+  if (pads.length === 1 && /MountingHole/i.test(lib) && pads[0]!.drill) {
+    const hole = { id: ref || `H${holeIndex + 1}`, at: { x: fx, y: Y(fy) }, drill: pads[0]!.drill!, pad: pads[0]!.size.w }
+    return { fp: null as unknown as Footprint, hole }
+  }
+
+  const graphics: FootprintGraphic[] = []
+  const gl = (l: List) => textField(l, "layer") ?? ""
+  const gw = (l: List) => field(first(l, "stroke") ?? [], "width") ?? field(l, "width") ?? 0.1
+  for (const g of all(f, "fp_line")) {
+    const a = first(g, "start"), b = first(g, "end")
+    graphics.push({ kind: "line", layer: gl(g), a: { x: numAt(a, 1) ?? 0, y: -(numAt(a, 2) ?? 0) }, b: { x: numAt(b, 1) ?? 0, y: -(numAt(b, 2) ?? 0) }, width: gw(g) })
+  }
+  for (const g of all(f, "fp_rect")) {
+    const a = first(g, "start"), b = first(g, "end")
+    graphics.push({ kind: "rect", layer: gl(g), a: { x: numAt(a, 1) ?? 0, y: -(numAt(a, 2) ?? 0) }, b: { x: numAt(b, 1) ?? 0, y: -(numAt(b, 2) ?? 0) }, width: gw(g) })
+  }
+  for (const g of all(f, "fp_circle")) {
+    const a = first(g, "center"), b = first(g, "end")
+    graphics.push({ kind: "circle", layer: gl(g), a: { x: numAt(a, 1) ?? 0, y: -(numAt(a, 2) ?? 0) }, b: { x: numAt(b, 1) ?? 0, y: -(numAt(b, 2) ?? 0) }, width: gw(g) })
+  }
+  for (const k of ["fp_arc", "fp_poly", "fp_curve"]) for (const _ of all(f, k)) skip(k)
+
+  // body size: courtyard if present, else the pad extents
+  const cyard = graphics.filter((g) => g.layer.endsWith("CrtYd"))
+  const body = bodyFrom(cyard, pads)
+
+  const m3 = first(f, "model")
+  const fp: Footprint = {
+    ref: ref || `U${holeIndex + 1}`,
+    value,
+    lib,
+    at: { x: fx, y: Y(fy) },
+    rotation: -rotKicad,
+    side,
+    pads,
+    graphics,
+    height: 0,
+    body,
+  }
+  if (m3) {
+    const path = at(m3, 1)
+    if (path) {
+      // KiCad writes (model "path" (offset (xyz ...)) (scale (xyz ...)) (rotate (xyz ...))). All three
+      // blocks matter: a footprint whose model is rotated 90 degrees renders wrong if only the path is kept.
+      const xyz = (block: List | undefined): [number, number, number] | undefined => {
+        const v = first(block ?? [], "xyz")
+        const x = numAt(v, 1), y = numAt(v, 2), z = numAt(v, 3)
+        return x === undefined || y === undefined || z === undefined ? undefined : [x, y, z]
+      }
+      const model: NonNullable<Footprint["model"]> = { path }
+      const o = xyz(first(m3, "offset"))
+      const sc = xyz(first(m3, "scale"))
+      const ro = xyz(first(m3, "rotate"))
+      if (o) model.offset = o
+      if (sc) model.scale = sc
+      if (ro) model.rotate = ro
+      fp.model = model
+    }
+  }
+  return { fp, hole: null }
+}
+
+export interface ModResult {
+  /** null when the file describes a mounting hole rather than a placeable footprint */
+  footprint: Footprint | null
+  /** set when the file is really a mounting hole (a single non-plated pad) */
+  hole: Board["holes"][number] | null
+  warnings: string[]
+  /** things in the file this reader does not model, with counts */
+  skipped: Record<string, number>
+}
+
+/**
+ * A standalone `.kicad_mod` file to a Footprint.
+ *
+ * This is the same `(footprint ...)` node a board contains, so it goes through the same parser as the board
+ * reader rather than a second implementation that would drift. The file has no board, so there is no `at` to
+ * honour and no outline to recentre on: a footprint from here sits at the origin with its pads and graphics in
+ * footprint-local millimetres, which is what a placement step wants.
+ *
+ * `lib` becomes the file's own footprint name (for example `C_0603_1608Metric`), since a standalone file
+ * carries no library nickname. Callers that know which library it came from should set `lib` themselves.
+ */
+export function readKicadMod(text: string): ModResult {
+  const root = parse(text)
+  // KiCad 5 and early 6 wrote `(module ...)` where later versions write `(footprint ...)`; the children are the
+  // same, and real libraries still in use ship both, so accept either rather than refuse a usable file.
+  const kind = head(root)
+  if (kind !== "footprint" && kind !== "module") throw new Error(`not a kicad_mod file (starts with "${kind}")`)
+  const warnings: string[] = []
+  const skipped: Record<string, number> = {}
+  const skip = (k: string) => (skipped[k] = (skipped[k] ?? 0) + 1)
+  // a standalone file has no nets, so every pad's net is empty
+  const parsed = footprintFrom(root, skip, () => "", 0)
+  if (!parsed) return { footprint: null, hole: null, warnings, skipped }
+  if (parsed.hole) return { footprint: null, hole: parsed.hole, warnings, skipped }
+  return { footprint: parsed.fp, hole: null, warnings, skipped }
+}
+
 export function readKicadPcb(text: string): ReadResult {
   const root = parse(text)
   if (head(root) !== "kicad_pcb") throw new Error(`not a kicad_pcb file (starts with "${head(root)}")`)
@@ -121,118 +283,13 @@ export function readKicadPcb(text: string): ReadResult {
   const fps: Footprint[] = []
   const holes: Board["holes"] = []
   for (const f of all(root, "footprint")) {
-    const lib = at(f, 1) ?? "unknown"
-    const atN = first(f, "at")
-    const fx = numAt(atN, 1) ?? 0
-    const fy = numAt(atN, 2) ?? 0
-    const rotKicad = numAt(atN, 3) ?? 0
-    const side: "top" | "bottom" = textField(f, "layer") === "B.Cu" ? "bottom" : "top"
-    let ref = ""
-    let value = ""
-    for (const p of all(f, "property")) {
-      const k = at(p, 1)
-      if (k === "Reference") ref = at(p, 2) ?? ""
-      if (k === "Value") value = at(p, 2) ?? ""
-    }
-    // older files use fp_text
-    for (const t of all(f, "fp_text")) {
-      if (at(t, 1) === "reference") ref = at(t, 2) ?? ref
-      if (at(t, 1) === "value") value = at(t, 2) ?? value
-    }
-
-    const pads: Pad[] = []
-    for (const p of all(f, "pad")) {
-      const kindTxt = at(p, 2)
-      const shape = at(p, 3) as Pad["shape"]
-      const kind: Pad["kind"] = kindTxt === "smd" ? "smd" : kindTxt === "np_thru_hole" ? "npth" : "thru"
-      if (kindTxt === "connect") {
-        skip("edge-connector pads")
-        continue
-      }
-      const pat = first(p, "at")
-      const sz = first(p, "size")
-      const drill = field(p, "drill")
-      const lay: string[] = []
-      const ll = first(p, "layers")
-      if (ll) for (let i = 1; i < ll.length; i++) {
-        const v = at(ll, i)
-        if (v) lay.push(v)
-      }
-      const cu = lay.filter((x) => /\.Cu$/.test(x))
-      const layersOut = cu.length ? (cu.some((x) => x.startsWith("*")) ? ["F.Cu", "B.Cu"] : cu) : kind === "smd" ? [side === "top" ? "F.Cu" : "B.Cu"] : ["F.Cu", "B.Cu"]
-      pads.push({
-        name: at(p, 1) ?? "",
-        kind,
-        shape: (["rect", "circle", "oval", "roundrect"].includes(shape) ? shape : "rect") as Pad["shape"],
-        at: { x: numAt(pat, 1) ?? 0, y: -(numAt(pat, 2) ?? 0) },
-        size: { w: numAt(sz, 1) ?? 0, h: numAt(sz, 2) ?? numAt(sz, 1) ?? 0 },
-        drill: drill,
-        layers: layersOut,
-        net: netOf(p),
-      })
-    }
-
-    // a lone non-plated pad in a footprint that is just a hole becomes a MountHole
-    if (pads.length === 1 && /MountingHole/i.test(lib) && pads[0]!.drill) {
-      holes.push({ id: ref || `H${holes.length + 1}`, at: { x: fx, y: Y(fy) }, drill: pads[0]!.drill!, pad: pads[0]!.size.w })
+    const parsed = footprintFrom(f, skip, netOf, holes.length)
+    if (!parsed) continue
+    if (parsed.hole) {
+      holes.push(parsed.hole)
       continue
     }
-
-    const graphics: FootprintGraphic[] = []
-    const gl = (l: List) => textField(l, "layer") ?? ""
-    const gw = (l: List) => field(first(l, "stroke") ?? [], "width") ?? field(l, "width") ?? 0.1
-    for (const g of all(f, "fp_line")) {
-      const a = first(g, "start"), b = first(g, "end")
-      graphics.push({ kind: "line", layer: gl(g), a: { x: numAt(a, 1) ?? 0, y: -(numAt(a, 2) ?? 0) }, b: { x: numAt(b, 1) ?? 0, y: -(numAt(b, 2) ?? 0) }, width: gw(g) })
-    }
-    for (const g of all(f, "fp_rect")) {
-      const a = first(g, "start"), b = first(g, "end")
-      graphics.push({ kind: "rect", layer: gl(g), a: { x: numAt(a, 1) ?? 0, y: -(numAt(a, 2) ?? 0) }, b: { x: numAt(b, 1) ?? 0, y: -(numAt(b, 2) ?? 0) }, width: gw(g) })
-    }
-    for (const g of all(f, "fp_circle")) {
-      const a = first(g, "center"), b = first(g, "end")
-      graphics.push({ kind: "circle", layer: gl(g), a: { x: numAt(a, 1) ?? 0, y: -(numAt(a, 2) ?? 0) }, b: { x: numAt(b, 1) ?? 0, y: -(numAt(b, 2) ?? 0) }, width: gw(g) })
-    }
-    for (const k of ["fp_arc", "fp_poly", "fp_curve"]) for (const _ of all(f, k)) skip(k)
-
-    // body size: courtyard if present, else the pad extents
-    const cyard = graphics.filter((g) => g.layer.endsWith("CrtYd"))
-    const body = bodyFrom(cyard, pads)
-
-    const m3 = first(f, "model")
-    const fp: Footprint = {
-      ref: ref || `U${fps.length + 1}`,
-      value,
-      lib,
-      at: { x: fx, y: Y(fy) },
-      rotation: -rotKicad,
-      side,
-      pads,
-      graphics,
-      height: 0,
-      body,
-    }
-    if (m3) {
-      const path = at(m3, 1)
-      if (path) {
-        // KiCad writes (model "path" (offset (xyz ...)) (scale (xyz ...)) (rotate (xyz ...))). All three
-        // blocks matter: a footprint whose model is rotated 90 degrees renders wrong if only the path is kept.
-        const xyz = (block: List | undefined): [number, number, number] | undefined => {
-          const v = first(block ?? [], "xyz")
-          const x = numAt(v, 1), y = numAt(v, 2), z = numAt(v, 3)
-          return x === undefined || y === undefined || z === undefined ? undefined : [x, y, z]
-        }
-        const model: NonNullable<Footprint["model"]> = { path }
-        const o = xyz(first(m3, "offset"))
-        const sc = xyz(first(m3, "scale"))
-        const ro = xyz(first(m3, "rotate"))
-        if (o) model.offset = o
-        if (sc) model.scale = sc
-        if (ro) model.rotate = ro
-        fp.model = model
-      }
-    }
-    fps.push(fp)
+    fps.push(parsed.fp)
   }
 
   for (const z of all(root, "zone")) skip("zone")
