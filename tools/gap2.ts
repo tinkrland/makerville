@@ -9,7 +9,7 @@ const p = parsePart21(fs.readFileSync(file, "latin1"))
 const w: string[] = []
 const solids = new Brep(p, new Geometry(p, w), w).read()
 const wm = weld(tessellate(solids), 1e-6)
-const st = stitchTJunctions(wm, 1e-4)
+const st = stitchTJunctions(wm)
 const m = st.mesh
 const s = meshStats(m)
 console.log(`${file.split("/").pop()}: after weld+stitch open ${s.boundaryEdges} nonmanifold ${s.nonManifoldEdges} splits ${st.splits}`)

@@ -34,8 +34,8 @@ Real models are B-rep. Face mix in the five reference files: planes ~70%, then c
 - [x] 4. `surfaces.ts` plane, cylinder, cone, sphere, torus, B-spline surface: evaluate point + normal and project a point to (u,v). Done (commit 27b60ff).
 - [x] 5. `brep.ts` walk MANIFOLD_SOLID_BREP -> CLOSED_SHELL -> ADVANCED_FACE -> loops -> oriented edges. Respect same_sense flags and edge orientation. Done (commit 3b695ee).
 - [x] 6. `tessellate.ts` turn each trimmed face into triangles: sample the boundary loops to a chord tolerance, triangulate in the surface's (u,v) domain handling holes (ear clipping with hole bridging), lift back to 3D. Planes exact; cylinders/cones need seam handling. Done, BUT see "Measured state" below: not every real model closes.
-- [ ] 7. `assembly.ts` NEXT_ASSEMBLY_USAGE_OCCURRENCE + ITEM_DEFINED_TRANSFORMATION placements; instance shared parts.
-- [ ] 8. `colour.ts` STYLED_ITEM -> COLOUR_RGB per face.
+- [x] 7. `assembly.ts` NEXT_ASSEMBLY_USAGE_OCCURRENCE + ITEM_DEFINED_TRANSFORMATION placements. Done. 6 tests. Two traps: the transform ref lives in the `REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION` PART of a complex instance, not in `args`; and ITEM_DEFINED_TRANSFORMATION starts with TWO `$` fields, so take the first two REF args rather than indexing. IMPORTANT: these exporters already store the B-reps in world coordinates, so applying a placement would be wrong (measured: the pin's as-is max z is exactly the 8.4 the placement carries; the connector would shift 1.3525 mm off its declared extents). readStep uses the solids as-is and exposes the placements for callers that want the hierarchy. A test pins that applying them would move the model.
+- [x] 8. `colour.ts` STYLED_ITEM -> ... -> COLOUR_RGB. Done. 5 tests. Colour is per styled ITEM (usually a whole solid, sometimes a face), so look up the face first and fall back to the solid. Measured: pin 2/2 solids (copper + brass), connector 42/42 solids in 3 colours (gold, shell, plastic), contact 1/1 copper, zero warnings. A broken chain is reported by name so a grey model says why.
 - [ ] 9. `index.ts` `readStep(bytes) -> { meshes: [{ positions, indices, colour }], boundsMm, warnings }`.
 - [ ] 10. Oracle test: for each real fixture compare our mesh to `kicad-cli pcb export` output or a hand-made board using the model (bounding box within 0.05 mm, volume within 2%, watertight where the solid is closed).
 - [ ] 11. Wire into the preview: `Footprint.model = { path, offset, rotation, scale }` is already in the model; a footprint with a model renders its mesh instead of the box.
@@ -120,6 +120,7 @@ pins 28 open at 1e-4 against 12 at the default.
 Do not chase these with a bigger tolerance, and do not chase T-junctions.
 
 ## Log (newest first; add a line per working session)
+- 2026-11-21: steps 7 and 8 done (assembly placements, colours). 381 tests pass. TYPE-C still 12 open edges, all in one chamfer sliver where the file's own surfaces do not meet; shared edges join correctly on both sides.
 - 2026-11-20: boundary vertices keep their own curve positions (TYPE-C 316->28 open, Contact watertight); measured and recorded the remaining TYPE-C gaps above. Suite 369 pass.
 - 2026-11-09: Steps 3 to 6 are committed (earlier scheduled runs). Re-measured all six real models: three close, three do not (table above). Workflow 'Boardforge continue' is archived, no scheduled runs remain. Handoff corrected from stale unchecked boxes.
 - 2026-11-08: STEP step 2 done (units). Bug found by a real file: name-suffix matching mistook an assembly link for a shape; now structural. Scheduled workflow 'Boardforge continue' created (every 30 min, 12 runs).
