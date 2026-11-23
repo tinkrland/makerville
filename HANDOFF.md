@@ -20,7 +20,7 @@ does the next unchecked step, runs the tests, commits, and updates this file. Ke
 | Headless JSON engine (commands, undo/redo) | done |
 | Case generator + print tolerances + golden suite | done |
 | Footprint sourcing (import real footprints) | done: `readKicadMod`, library import, model paths, 25 tests |
-| Placement (auto) | **in progress**: legality checker done (15 tests), placer not started |
+| Placement (auto) | done: legality checker + annealing placer (24 tests) |
 | Schematic files (`.kicad_sch`) | not started |
 | 3D models: STEP reader | done (12/12 steps, see below) |
 | EasyEDA browser adapter, KiCad plugin, web shell | not started |
@@ -190,11 +190,33 @@ can search for one. A footprint's extent is its body rectangle turned by its rot
 legal. Mutation-checked: replacing the oriented test with an axis-aligned one fails the 45 degree test, and
 dropping the edge-crossing check fails the slot test.
 
-Next: the placer itself. It should move parts from a legal start, score wire length from the netlist plus
-penalties from `placementIssues`, and never report success while `placementIssues` is non-empty.
+## Placement (auto), step 2 of 2: the placer
+`autoPlace(board, { seed, steps, clearance, margin, fixed })` in `src/placement/place.ts`. It packs parts into
+rows inside the outline as a starting point, then anneals three moves (shift one, swap two, quarter-turn one).
+Score is half-perimeter wire length over the netlist plus `overlapWeight` times the total penetration depth plus
+the same times how far any part sits outside the outline. Overlaps are priced rather than rejected, which is why
+`overlapDepth` returns millimetres.
+
+`legal` is computed by calling `placementIssues` on the result, not by trusting the search. Deterministic in
+`seed` (mulberry32), and the input board is not mutated.
+
+Measured on a 70x50 board with an 8-part series chain: incoming 14.21 mm, packed start 13.26 mm, after 8000
+steps 10.46 to 11.87 depending on seed, after 20000 steps down to 9.55. Temperature is 0.3 x the starting score:
+measured against 0.05 and 0.6, 0.3 was consistently best at moderate budgets.
+
+Two floating-point bugs found while testing, both the same shape: a part packed exactly AT the clearance or
+exactly AT the margin was called illegal, because the penetration came out as about 1e-15. Both bounds are
+CLOSED now, with `EPS = 1e-12` subtracted: above the dust, far below any sensible comparison tolerance. A third
+bug: `packStart` repacked fixed parts, so an anchor moved before the search even started.
+
+Mutation-checked: always reporting legal fails the tight-board test, and unseeded randomness fails the
+determinism test.
+
+Next: schematic files (`.kicad_sch`), then the three shells. Nothing calls `autoPlace` from a shell yet.
 
 ## Log (newest first; add a line per working session)
-- 2026-11-21 (later still): placement legality done (446 tests). Library import and model paths closed out
+- 2026-11-23: auto-placement done (455 tests). Legality checker and annealing placer, mutation-checked. Next
+  portion is `.kicad_sch`.- 2026-11-21 (later still): placement legality done (446 tests). Library import and model paths closed out
   footprint sourcing. No placer yet.- 2026-11-21 (later): footprint sourcing finished off with library import and model path resolution (431 tests).
   Two of the four failures on the way were the assistant's own: an order assertion that confused sorted paths
   with sorted names, and a missing `async` on a test using a dynamic import.- 2026-11-21: footprint sourcing done (415 tests). STEP reader closed out at 12/12. Next portions untouched:

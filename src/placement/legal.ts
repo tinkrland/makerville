@@ -26,6 +26,13 @@ export interface Obb {
 
 const rad = (deg: number) => (deg * Math.PI) / 180
 
+/**
+ * The hair subtracted from the closed bounds. It has to sit between two much larger numbers: well above the
+ * ~1e-15 of floating-point dust that two exactly-touching boxes produce, and well below the tolerance any test
+ * or caller would use when comparing sizes. 1e-12 is a thousand times either way.
+ */
+const EPS = 1e-12
+
 /** the box a footprint occupies: its body, at its position and rotation */
 export function footprintObb(fp: Pick<Footprint, "at" | "rotation" | "body">): Obb {
   return { cx: fp.at.x, cy: fp.at.y, w: fp.body.w, h: fp.body.h, rot: fp.rotation }
@@ -79,9 +86,13 @@ const project = (pts: Pt[], ax: Pt): [number, number] => {
  * that one exists.
  */
 export function overlapDepth(a: Obb, b: Obb, clearance = 0): number {
-  // inflate both by half the clearance, so the test enforces a gap of `clearance` between the real shapes
-  const A = grown(a, clearance / 2)
-  const B = grown(b, clearance / 2)
+  // Inflate both by half the clearance, so the test enforces a gap of `clearance` between the real shapes. The
+  // clearance is a CLOSED bound, like the board margin: parts packed exactly `clearance` apart are legal. The
+  // hair subtracted here is what makes that true, because without it two parts sitting exactly at the limit
+  // report a penetration of about 1e-15 and a legal arrangement is called illegal.
+  const half = clearance / 2 - EPS
+  const A = grown(a, half)
+  const B = grown(b, half)
   const ca = obbCorners(A)
   const cb = obbCorners(B)
   let depth = Infinity
@@ -130,7 +141,12 @@ export function segmentsCross(a: Pt, b: Pt, c: Pt, d: Pt): boolean {
  */
 export function insideOutline(outline: Pt[], b: Obb, margin = 0): boolean {
   if (outline.length < 3) return false
-  const box = margin > 0 ? grown(b, margin) : b
+  // The margin is a CLOSED bound: a part exactly `margin` from the edge is legal, and a part that packs flush
+  // against it is the common case, not an edge case. Shrinking the grown box by a hair keeps the test on the
+  // inside of the boundary, where point-in-polygon is unambiguous. Without this, a flush-packed part has its
+  // edge exactly on the outline and the crossing-number test calls those corners outside.
+  // applied at margin 0 as well: a body resting exactly on the board edge is on the board
+  const box = grown(b, margin - EPS)
   const corners = obbCorners(box)
   for (const c of corners) if (!pointInPolygon(c, outline)) return false
   for (let i = 0; i < 4; i++) {
